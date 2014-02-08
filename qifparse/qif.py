@@ -11,6 +11,8 @@ ACCOUNT_TYPES = [
     'Oth L',
     'Invoice',  # Quicken for business only
     'Invst',
+    '401(k)/403(b)',
+    'Port'
 ]
 
 MEMORIZED_TRANSACTION_TYPES = [
@@ -27,6 +29,7 @@ class Qif(object):
         self._accounts = []
         self._categories = []
         self._classes = []
+        self._tags = []
         self._transactions = {}
         self._last_header = None
 
@@ -45,6 +48,11 @@ class Qif(object):
             raise RuntimeError(six.u("item not recognized"))
         self._classes.append(item)
 
+    def add_tag(self, item):
+        if not isinstance(item, Tag):
+            raise RunTimeError(six.u("item not recognized"))
+        self._tags.append(item)
+        
     def add_transaction(self, item, header=None):
         if not isinstance(item, Transaction)\
                 and not isinstance(item, MemorizedTransaction):
@@ -191,8 +199,6 @@ class Transaction(BaseEntry):
         Field('memo', 'string', 'M'),
         Field('address', 'multilinestring', 'A'),
         Field('category', 'string', 'L'),
-        Field('reimbursable_expense', 'boolean', 'F'),
-        Field('small_business_expense', 'boolean', 'X'),
         Field('to_account', 'reference', 'L'),
     ]
 
@@ -334,7 +340,12 @@ class Category(BaseEntry):
         Field('tax_schedule_amount', 'string', 'R'),
     ]
 
-
+class Tag(BaseEntry):
+    _fields = [
+        Field('name', 'string', 'N', required=True),
+        Field('description', 'string', 'D'),
+    ]
+    
 class Class(BaseEntry):
     _fields = [
         Field('name', 'string', 'N', required=True),

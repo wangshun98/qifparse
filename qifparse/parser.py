@@ -8,6 +8,7 @@ from qifparse.qif import (
     Account,
     Investment,
     Category,
+    Tag,
     Class,
     Qif,
 )
@@ -15,7 +16,7 @@ from qifparse.qif import (
 NON_INVST_ACCOUNT_TYPES = [
     '!Type:Cash',
     '!Type:Bank',
-    '!Type:Ccard',
+    '!Type:CCard',
     '!Type:Oth A',
     '!Type:Oth L',
     '!Type:Invoice',  # Quicken for business only
@@ -47,12 +48,17 @@ class QifParser(object):
             'transaction': cls_.parseTransaction,
             'investment': cls_.parseInvestment,
             'class': cls_.parseClass,
-            'memorized': cls_.parseMemorizedTransaction
+            'memorized': cls_.parseMemorizedTransaction,
+            'tag':cls_.parseTag
         }
         for chunk in chunks:
             if not chunk:
                 continue
-            first_line = chunk.split('\n')[0]
+            chunklines = chunk.split('\n')   
+            ii = 0
+            while ('!' in chunklines[ii] and 'AutoSwitch' in chunklines[ii]):
+                ii = ii + 1
+            first_line = chunklines[ii].strip()
             if first_line == '!Type:Cat':
                 last_type = 'category'
             elif first_line == '!Account':
@@ -68,8 +74,10 @@ class QifParser(object):
             elif first_line == '!Type:Memorized':
                 last_type = 'memorized'
                 transactions_header = first_line
+            elif first_line == '!Type:Tag':
+                last_type = 'tag'
             elif chunk.startswith('!'):
-                raise QifParserException('Header not reconized')
+                raise QifParserException('Header not recognized: ', first_line)
             # if no header is recognized then
             # we use the previous one
             item = parsers[last_type](chunk)
@@ -88,6 +96,8 @@ class QifParser(object):
                 qif_obj.add_category(item)
             elif last_type == 'class':
                 qif_obj.add_class(item)
+            elif last_type == 'tag':
+                qif_obj.add_tag(item)
         return qif_obj
 
     @classmethod
@@ -139,7 +149,8 @@ class QifParser(object):
         curItem = Account()
         lines = chunk.split('\n')
         for line in lines:
-            if not len(line) or line[0] == '\n' or line.startswith('!Account'):
+            if not len(line) or line[0] == '\n' or line.startswith('!Account') \
+               or line.startswith('!Option:AutoSwitch') or line.startswith('!Clear:AutoSwitch'):
                 continue
             elif line[0] == 'N':
                 curItem.name = line[1:]
@@ -158,6 +169,21 @@ class QifParser(object):
         return curItem
 
     @classmethod
+    def parseTag(cls_, chunk):
+        """
+        """
+        curItem = Tag()
+        lines = chunk.split('\n')
+        for line in lines:
+            if not len(line) or line[0] == '\n' or line.startswith('!Type'):
+                continue
+            elif line[0] == 'D':
+                curItem.description = line[1:]
+            elif line[0] == 'N':
+                curItem.name = line[1:]
+        return curItem
+        
+    @classmethod
     def parseMemorizedTransaction(cls_, chunk, date_format=None):
         """
         """
@@ -171,7 +197,7 @@ class QifParser(object):
                     line.startswith('!Type:Memorized'):
                 continue
             elif line[0] == 'T':
-                curItem.amount = float(line[1:])
+                curItem.amount = float(line[1:].replace(',',''))
             elif line[0] == 'C':
                 curItem.cleared = line[1:]
             elif line[0] == 'P':
@@ -208,7 +234,7 @@ class QifParser(object):
                 split.address.append(line[1:])
             elif line[0] == '$':
                 split = curItem.splits[-1]
-                split.amount = float(line[1:-1])
+                split.amount = float(line[1:].replace(',',''))
             else:
                 # don't recognise this line; ignore it
                 print ("Skipping unknown line:\n" + str(line))
@@ -231,7 +257,7 @@ class QifParser(object):
             elif line[0] == 'N':
                 curItem.num = line[1:]
             elif line[0] == 'T':
-                curItem.amount = float(line[1:])
+                curItem.amount = float(line[1:].replace(',',''))
             elif line[0] == 'C':
                 curItem.cleared = line[1:]
             elif line[0] == 'P':
@@ -280,7 +306,7 @@ class QifParser(object):
                 split.address.append(line[1:])
             elif line[0] == '$':
                 split = curItem.splits[-1]
-                split.amount = float(line[1:-1])
+                split.amount = float(line[1:].replace(',',''))
             else:
                 # don't recognise this line; ignore it
                 print ("Skipping unknown line:\n" + str(line))
@@ -301,15 +327,15 @@ class QifParser(object):
             elif line[0] == 'D':
                 curItem.date = cls_.parseQifDateTime(line[1:])
             elif line[0] == 'T':
-                curItem.amount = float(line[1:])
+                curItem.amount = float(line[1:].replace(',',''))
             elif line[0] == 'N':
                 curItem.action = line[1:]
             elif line[0] == 'Y':
                 curItem.security = line[1:]
             elif line[0] == 'I':
-                curItem.price = float(line[1:])
+                curItem.price = float(line[1:].replace(',',''))
             elif line[0] == 'Q':
-                curItem.quantity = float(line[1:])
+                curItem.quantity = float(line[1:].replace(',',''))
             elif line[0] == 'C':
                 curItem.cleared = line[1:]
             elif line[0] == 'M':
@@ -319,9 +345,9 @@ class QifParser(object):
             elif line[0] == 'L':
                 curItem.to_account = line[2:-1]
             elif line[0] == '$':
-                curItem.amount_transfer = float(line[1:])
+                curItem.amount_transfer = float(line[1:].replace(',',''))
             elif line[0] == 'O':
-                curItem.commission = float(line[1:])
+                curItem.commission = float(line[1:].replace(',',''))
         return curItem
 
     @classmethod
@@ -344,7 +370,7 @@ class QifParser(object):
             iso_date = qdate[6:10] + "-" + qdate[3:5] + "-" + qdate[0:2]
             return datetime.strptime(iso_date, '%Y-%m-%d')
         if qdate[5] == "'":
-            C = "20"
+            return datetime.strptime(qdate, "%m/%d'%y")
         else:
             C = "19"
         iso_date = C + qdate[6:8] + "-" + qdate[3:5] + "-" + qdate[0:2]
